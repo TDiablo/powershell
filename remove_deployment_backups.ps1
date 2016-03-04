@@ -1,0 +1,1 @@
+Remove-Item D:\temp\packages\candidate\* -Recurse -Force -exclude *Communities*
