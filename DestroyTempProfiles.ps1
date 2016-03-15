@@ -1,4 +1,8 @@
-﻿$machinelist =@("QA2-WEB1.homenet.local")
+﻿$Environment = $args[0]
+
+$machinelist = cmd /c "c:\homenet\tools\buildtools\SettingsHelper.exe -e $Environment Machines.ListMachinesForApplication(InventoryOnline2-Website)"
+
+echo $machinelist
 
 $machinelist | foreach {
     $webmachine = $_ 
@@ -19,7 +23,7 @@ $machinelist | foreach {
     #First Get User SID
     $objUser = New-Object System.Security.Principal.NTAccount($AppDomain, $u)
     $strSID = $objUser.Translate([System.Security.Principal.SecurityIdentifier])
-    $strSID.Value
+    $UserSID=$strSID.Value
 
     $Apppass = ConvertTo-SecureString -AsPlainText $AppPassword -Force
     $AppCred = New-Object System.Management.Automation.PSCredential -ArgumentList $AppUsername,$Apppass
@@ -38,36 +42,82 @@ $machinelist | foreach {
     Invoke-command -Session $s -ScriptBlock {Stop-Service w3svc}
     
     echo "adding to local admin"
-    Invoke-command -Session $s -ScriptBlock {cmd /c "net localgroup administrators HOMENET\IOL2Web /add"} 
-    echo "creating text file."
+    Invoke-command -Session $s -ScriptBlock {
+        $using:AppUsername
+        echo $using:AppUsername
+        If ($using:AppUsername -eq [String]::Empty){            
+            Write-Host "Username is empty"
+            Exit
+        }     
+        Else {
+           Write-Host "Adding $using:Appusername to Local Admin" 
+           cmd /c "net localgroup administrators $Using:AppUsername /add"} 
+        }
+    
     #kill all tasks running under Username
-    Invoke-command -Session $s -ScriptBlock {TASKKILL.EXE /FI "USERNAME eq $u" /IM *}
+    Invoke-command -Session $s -ScriptBlock {
+        $using:u
+        if ($using:u -eq [String]::Empty){
+            Write-Host "Username is empty"
+            Exit
+        }     
+        Else {
+            TASKKILL.EXE /FI "USERNAME eq $using:u" /IM *
+        }
+
+    }
     #Disassociate Temp Folders from User
-    # delete profile mapping registry key
-    Invoke-command -Session $s -ScriptBlock {Start-Service w3svc
-    #Delete User from ProfileList
-    Invoke-command -Session $s -ScriptBlock {Start-Service w3svc
+
+    Invoke-command -Session $s -ScriptBlock {
+        $Using:USerSID
+        echo $Using:USerSID
+        If ($Using:USerSID-eq [String]::Empty){
+            Write-Host "Username is empty"
+            Exit
+        }     
+        Else {
+            Write-Host "Messing with the registry"
+            #Delete profile mapping registry key
+            #Remove-Item -Path "hku:\$USerSID\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders" -Recurse
+            #Delete User from ProfileList
+            #Remove-Item -Path "hklm:\Software\Microsoft\Windows NT\CurrentVersion\ProfileList\$USerSID" -Recurse
+        }
     
-    
+    }
     echo $ProfilePath
-    Invoke-command -Session $Appsession -ScriptBlock {cmd /c echo "A text file has been created." >  Profile2.txt}
+    #Invoke-command -Session $Appsession -ScriptBlock {cmd /c echo "A text file has been created." >  Profile2.txt}
     echo "Starting " $Res.Displayname
     Invoke-command -Session $s -ScriptBlock {Start-Service w3svc} 
-    echo "deleting from to local admin"
-    Invoke-command -Session $s -ScriptBlock {cmd /c "net localgroup administrators HOMENET\IOL2Web /del"}
-    $cmd = "Get-Content -Path $ProfilePath"
-    $Stat=(Invoke-command -Session $s -ScriptBlock {$cmd})
-    $cmd = "cmd /c del $ProfilePath"
-    #Invoke-command -Session $s -ScriptBlock {$cmd}
 
+    #Remove from Local admin
+    Invoke-command -Session $s -ScriptBlock {
+        $using:AppUsername
+        echo $using:AppUsername
+        If ($using:AppUsername -eq [String]::Empty){            
+            Write-Host "Username is empty"
+            Exit
+        }     
+        Else {
+            Write-Host "Removing $using:AppUsername from local admin"
+            cmd /c "net localgroup administrators $using:AppUsername /del"
+    }
     
-    echo $Stat
+    #Clean up your mess
+    Invoke-command -Session $s -ScriptBlock {
+        $using:ProfilePath
+        if (using:ProfilePath -eq [String]::Empty){            
+            Write-Host "Profile path is empty"
+            Exit
+        }     
+        Else {
+            cmd /c "del $ProfilePath"
+        }
+    }
+
 
 
 
     Remove-PSSession $s
     Remove-PSSession $Appsession
     echo "WORK COMPLETE - ZUG ZUG"
-}
-
 
